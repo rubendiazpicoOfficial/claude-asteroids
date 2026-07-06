@@ -62,6 +62,15 @@ const RADII  = [0, 16, 30, 50];   // por tamaño 1, 2, 3
 const SPEEDS = [0, 85, 55, 32];   // velocidad base por tamaño
 const POINTS = [0, 100, 50, 20];  // puntos por tamaño
 
+// Formas fijas (vértices normalizados, radio máximo 1) para asteroides grandes (tamaño 3)
+const LARGE_ASTEROID_SHAPES = [
+  [
+    [-0.058, -0.943], [0.515, -0.752], [0.447, -0.193], [0.979, -0.050],
+    [0.740, 0.543], [0.351, 0.482], [0.106, 0.953], [-0.297, 0.666],
+    [-0.638, 0.598], [-0.999, 0.045], [-0.795, -0.548], [-0.351, -0.800],
+  ],
+];
+
 class Asteroid {
   constructor(x, y, size = 3) {
     this.x    = x;
@@ -77,13 +86,19 @@ class Asteroid {
     this.rotSpeed = rand(-1.2, 1.2);
     this.rot = rand(0, Math.PI * 2);
 
-    // Polígono irregular
-    const n = randInt(8, 13);
-    this.verts = [];
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2;
-      const r = this.radius * rand(0.6, 1.0);
-      this.verts.push([Math.cos(a) * r, Math.sin(a) * r]);
+    if (size === 3) {
+      // Forma fija elegida al azar entre las variaciones de asteroide grande
+      const shape = LARGE_ASTEROID_SHAPES[randInt(0, LARGE_ASTEROID_SHAPES.length - 1)];
+      this.verts = shape.map(([x, y]) => [x * this.radius, y * this.radius]);
+    } else {
+      // Polígono irregular
+      const n = randInt(8, 13);
+      this.verts = [];
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const r = this.radius * rand(0.6, 1.0);
+        this.verts.push([Math.cos(a) * r, Math.sin(a) * r]);
+      }
     }
   }
 
