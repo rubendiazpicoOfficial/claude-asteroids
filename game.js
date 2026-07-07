@@ -150,14 +150,14 @@ class Ship {
     this.dead          = false;
   }
 
-  update(dt) {
+  update(dt, hyper = false) {
     if (this.dead) return;
     if (this.invincible    > 0) this.invincible    -= dt;
     if (this.shootCooldown > 0) this.shootCooldown -= dt;
 
-    const ROT   = 3.5;   // rad/s
-    const THRUST = 260;  // px/s²
-    const DRAG   = 0.987;
+    const ROT    = 3.5;                    // rad/s
+    const THRUST = hyper ? 640 : 260;       // px/s² (Hiperpropulsión: aceleración drástica)
+    const DRAG   = hyper ? 0.995 : 0.987;   // Hiperpropulsión: menos fricción = mayor velocidad máxima
 
     if (keys['ArrowLeft'])  this.angle -= ROT * dt;
     if (keys['ArrowRight']) this.angle += ROT * dt;
@@ -258,12 +258,12 @@ class Particle {
   }
 }
 
-// ── Power-up: DisparoTriple / Escudo / SlowMotion / BombaNova ────────────────
+// ── Power-up: DisparoTriple / Escudo / SlowMotion / BombaNova / Hiperpropulsión
 class PowerUp {
   constructor(x, y, type = 'triple') {
     this.x = x;
     this.y = y;
-    this.type = type;   // 'triple' | 'shield' | 'slow' | 'nova'
+    this.type = type;   // 'triple' | 'shield' | 'slow' | 'nova' | 'hyper'
     this.radius = 12;
     this.ttl   = 12;   // segundos en pantalla antes de desaparecer si no se recoge
     this.pulse = 0;
@@ -283,10 +283,12 @@ class PowerUp {
     const color = this.type === 'shield' ? '#4ade80'
                 : this.type === 'slow'   ? '#a78bfa'
                 : this.type === 'nova'   ? '#fbbf24'
+                : this.type === 'hyper'  ? '#f97316'
                 : '#0ff';
     const fill  = this.type === 'shield' ? 'rgba(74, 222, 128, 0.15)'
                 : this.type === 'slow'   ? 'rgba(167, 139, 250, 0.15)'
                 : this.type === 'nova'   ? 'rgba(251, 191, 36, 0.15)'
+                : this.type === 'hyper'  ? 'rgba(249, 115, 22, 0.15)'
                 : 'rgba(0, 255, 255, 0.15)';
 
     const scale = 1 + Math.sin(this.pulse * 4) * 0.12;
@@ -328,6 +330,15 @@ class PowerUp {
         ctx.lineTo(Math.cos(a) * this.radius * 0.75, Math.sin(a) * this.radius * 0.75);
         ctx.stroke();
       }
+    } else if (this.type === 'hyper') {
+      // Doble flecha ascendente como icono de Hiperpropulsión
+      [-4, 3].forEach(offsetY => {
+        ctx.beginPath();
+        ctx.moveTo(-5, offsetY + 4);
+        ctx.lineTo(0, offsetY - 3);
+        ctx.lineTo(5, offsetY + 4);
+        ctx.stroke();
+      });
     } else {
       // Tres pequeñas flechas en abanico como icono de DisparoTriple
       [-0.3, 0, 0.3].forEach(offset => {
@@ -361,6 +372,9 @@ let slowTimer;      // segundos restantes de SlowMotion activo (0 = inactivo)
 let slowSpawned;    // si ya apareció un SlowMotion en este nivel
 let novaReady;       // si el jugador tiene una BombaNova cargada lista para detonar
 let novaSpawned;     // si ya apareció una BombaNova en este nivel
+let hyperReady;      // si el jugador tiene una Hiperpropulsión cargada, lista para activarse al colisionar
+let hyperTimer;      // segundos restantes de Hiperpropulsión activa (0 = inactiva)
+let hyperSpawned;    // si ya apareció una Hiperpropulsión en este nivel
 
 function spawnAsteroids(count) {
   const SAFE_DIST = 130;
@@ -392,6 +406,9 @@ function initGame() {
   slowSpawned   = false;
   novaReady     = false;
   novaSpawned   = false;
+  hyperReady    = false;
+  hyperTimer    = 0;
+  hyperSpawned  = false;
   spawnAsteroids(4);
 }
 
@@ -404,6 +421,7 @@ function nextLevel() {
   shieldSpawned = false;
   slowSpawned   = false;
   novaSpawned   = false;
+  hyperSpawned  = false;
   ship.reset();
   spawnAsteroids(3 + level);
 }
@@ -442,10 +460,11 @@ function update(dt) {
     return;
   }
 
-  // DisparoTriple / Escudo / SlowMotion: cuenta atrás de los efectos activos
+  // DisparoTriple / Escudo / SlowMotion / Hiperpropulsión: cuenta atrás de los efectos activos
   if (tripleTimer > 0) tripleTimer = Math.max(0, tripleTimer - dt);
   if (shieldTimer > 0) shieldTimer = Math.max(0, shieldTimer - dt);
   if (slowTimer   > 0) slowTimer   = Math.max(0, slowTimer   - dt);
+  if (hyperTimer  > 0) hyperTimer  = Math.max(0, hyperTimer  - dt);
 
   // Disparar
   if (pressed('Space')) {
@@ -462,7 +481,7 @@ function update(dt) {
     asteroids = [];
   }
 
-  ship.update(dt);
+  ship.update(dt, hyperTimer > 0);
   bullets.forEach(b => b.update(dt));
   const astDt = slowTimer > 0 ? dt * 0.5 : dt;
   asteroids.forEach(a => a.update(astDt));
@@ -479,6 +498,7 @@ function update(dt) {
   const SHIELD_DROP_CHANCE = 0.18;
   const SLOW_DROP_CHANCE = 0.15;
   const NOVA_DROP_CHANCE = 0.06;
+  const HYPER_DROP_CHANCE = 0.07;
   for (const b of bullets) {
     for (const a of asteroids) {
       if (!a.dead && !b.dead && dist(b, a) < a.radius) {
@@ -499,6 +519,9 @@ function update(dt) {
         } else if (!novaSpawned && Math.random() < NOVA_DROP_CHANCE) {
           powerUps.push(new PowerUp(a.x, a.y, 'nova'));
           novaSpawned = true;
+        } else if (!hyperSpawned && Math.random() < HYPER_DROP_CHANCE) {
+          powerUps.push(new PowerUp(a.x, a.y, 'hyper'));
+          hyperSpawned = true;
         }
       }
     }
@@ -509,12 +532,14 @@ function update(dt) {
   // Nave vs power-up
   const SHIELD_DURATION = 5;
   const SLOW_DURATION   = 6;
+  const HYPER_DURATION  = 8;
   for (const p of powerUps) {
     if (!p.dead && dist(ship, p) < ship.radius + p.radius) {
       p.dead = true;
       if (p.type === 'shield') shieldTimer = SHIELD_DURATION;
       else if (p.type === 'slow') slowTimer = SLOW_DURATION;
       else if (p.type === 'nova') novaReady = true;
+      else if (p.type === 'hyper') hyperReady = true;
       else tripleTimer = 5;
     }
   }
@@ -532,6 +557,11 @@ function update(dt) {
           score += POINTS[a.size];
           explode(a.x, a.y, a.size * 5);
           asteroids = asteroids.filter(x => !x.dead).concat(a.split());
+        } else if (hyperReady) {
+          // La Hiperpropulsión se activa in extremis en el impacto: la nave esquiva y sale disparada
+          hyperReady = false;
+          hyperTimer = HYPER_DURATION;
+          ship.invincible = 1;
         } else {
           killShip();
         }
@@ -601,6 +631,18 @@ function drawHUD() {
     ctx.textAlign = 'left';
     ctx.fillStyle = '#fbbf24';
     ctx.fillText(`NOVA  [B]`, 14, effectY);
+    effectY += 20;
+  }
+
+  if (hyperTimer > 0) {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#f97316';
+    ctx.fillText(`HIPER  ${Math.ceil(hyperTimer)}s`, 14, effectY);
+    effectY += 20;
+  } else if (hyperReady) {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#f97316';
+    ctx.fillText(`HIPER LISTA`, 14, effectY);
   }
 }
 
@@ -619,6 +661,25 @@ function drawShield() {
   ctx.arc(0, 0, ship.radius + 8, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
+  ctx.restore();
+}
+
+function drawHyperTrail() {
+  if (hyperTimer <= 0 || ship.dead) return;
+
+  ctx.save();
+  ctx.translate(ship.x, ship.y);
+  ctx.rotate(ship.angle);
+  ctx.strokeStyle = 'rgba(249, 115, 22, 0.85)';
+  ctx.lineWidth   = 1.5;
+  for (let i = 0; i < 3; i++) {
+    const offsetY = rand(-7, 7);
+    const len     = rand(10, 24);
+    ctx.beginPath();
+    ctx.moveTo(-10, offsetY);
+    ctx.lineTo(-10 - len, offsetY);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -642,6 +703,7 @@ function draw() {
   bullets.forEach(b => b.draw());
   ship.draw();
   drawShield();
+  drawHyperTrail();
 
   drawHUD();
 
