@@ -258,12 +258,12 @@ class Particle {
   }
 }
 
-// ── Power-up: DisparoTriple / Escudo / SlowMotion ────────────────────────────
+// ── Power-up: DisparoTriple / Escudo / SlowMotion / BombaNova ────────────────
 class PowerUp {
   constructor(x, y, type = 'triple') {
     this.x = x;
     this.y = y;
-    this.type = type;   // 'triple' | 'shield' | 'slow'
+    this.type = type;   // 'triple' | 'shield' | 'slow' | 'nova'
     this.radius = 12;
     this.ttl   = 12;   // segundos en pantalla antes de desaparecer si no se recoge
     this.pulse = 0;
@@ -280,9 +280,13 @@ class PowerUp {
     // Parpadeo en los últimos segundos, igual que la invencibilidad de la nave
     if (this.ttl < 3 && Math.floor(this.ttl * 8) % 2 === 0) return;
 
-    const color = this.type === 'shield' ? '#4ade80' : this.type === 'slow' ? '#a78bfa' : '#0ff';
+    const color = this.type === 'shield' ? '#4ade80'
+                : this.type === 'slow'   ? '#a78bfa'
+                : this.type === 'nova'   ? '#fbbf24'
+                : '#0ff';
     const fill  = this.type === 'shield' ? 'rgba(74, 222, 128, 0.15)'
                 : this.type === 'slow'   ? 'rgba(167, 139, 250, 0.15)'
+                : this.type === 'nova'   ? 'rgba(251, 191, 36, 0.15)'
                 : 'rgba(0, 255, 255, 0.15)';
 
     const scale = 1 + Math.sin(this.pulse * 4) * 0.12;
@@ -315,6 +319,15 @@ class PowerUp {
       ctx.moveTo(0, 0);
       ctx.lineTo(this.radius * 0.3, this.radius * 0.15);
       ctx.stroke();
+    } else if (this.type === 'nova') {
+      // Estallido radial como icono de BombaNova
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * this.radius * 0.25, Math.sin(a) * this.radius * 0.25);
+        ctx.lineTo(Math.cos(a) * this.radius * 0.75, Math.sin(a) * this.radius * 0.75);
+        ctx.stroke();
+      }
     } else {
       // Tres pequeñas flechas en abanico como icono de DisparoTriple
       [-0.3, 0, 0.3].forEach(offset => {
@@ -346,6 +359,8 @@ let shieldTimer;    // segundos restantes de Escudo activo (0 = inactivo)
 let shieldSpawned;  // si ya apareció un Escudo en este nivel
 let slowTimer;      // segundos restantes de SlowMotion activo (0 = inactivo)
 let slowSpawned;    // si ya apareció un SlowMotion en este nivel
+let novaReady;       // si el jugador tiene una BombaNova cargada lista para detonar
+let novaSpawned;     // si ya apareció una BombaNova en este nivel
 
 function spawnAsteroids(count) {
   const SAFE_DIST = 130;
@@ -375,6 +390,8 @@ function initGame() {
   shieldSpawned = false;
   slowTimer     = 0;
   slowSpawned   = false;
+  novaReady     = false;
+  novaSpawned   = false;
   spawnAsteroids(4);
 }
 
@@ -386,6 +403,7 @@ function nextLevel() {
   tripleSpawned = false;
   shieldSpawned = false;
   slowSpawned   = false;
+  novaSpawned   = false;
   ship.reset();
   spawnAsteroids(3 + level);
 }
@@ -434,6 +452,16 @@ function update(dt) {
     bullets.push(...ship.tryShoot(tripleTimer > 0));
   }
 
+  // BombaNova: detonación manual, destruye todos los asteroides visibles
+  if (novaReady && pressed('KeyB')) {
+    novaReady = false;
+    for (const a of asteroids) {
+      score += POINTS[a.size];
+      explode(a.x, a.y, a.size * 5);
+    }
+    asteroids = [];
+  }
+
   ship.update(dt);
   bullets.forEach(b => b.update(dt));
   const astDt = slowTimer > 0 ? dt * 0.5 : dt;
@@ -450,6 +478,7 @@ function update(dt) {
   const DROP_CHANCE = 0.25;
   const SHIELD_DROP_CHANCE = 0.18;
   const SLOW_DROP_CHANCE = 0.15;
+  const NOVA_DROP_CHANCE = 0.06;
   for (const b of bullets) {
     for (const a of asteroids) {
       if (!a.dead && !b.dead && dist(b, a) < a.radius) {
@@ -467,6 +496,9 @@ function update(dt) {
         } else if (!slowSpawned && Math.random() < SLOW_DROP_CHANCE) {
           powerUps.push(new PowerUp(a.x, a.y, 'slow'));
           slowSpawned = true;
+        } else if (!novaSpawned && Math.random() < NOVA_DROP_CHANCE) {
+          powerUps.push(new PowerUp(a.x, a.y, 'nova'));
+          novaSpawned = true;
         }
       }
     }
@@ -482,6 +514,7 @@ function update(dt) {
       p.dead = true;
       if (p.type === 'shield') shieldTimer = SHIELD_DURATION;
       else if (p.type === 'slow') slowTimer = SLOW_DURATION;
+      else if (p.type === 'nova') novaReady = true;
       else tripleTimer = 5;
     }
   }
@@ -561,6 +594,13 @@ function drawHUD() {
     ctx.textAlign = 'left';
     ctx.fillStyle = '#a78bfa';
     ctx.fillText(`LENTO  ${Math.ceil(slowTimer)}s`, 14, effectY);
+    effectY += 20;
+  }
+
+  if (novaReady) {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillText(`NOVA  [B]`, 14, effectY);
   }
 }
 
