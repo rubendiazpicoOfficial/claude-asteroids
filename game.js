@@ -258,12 +258,12 @@ class Particle {
   }
 }
 
-// ── Power-up: DisparoTriple / Escudo ─────────────────────────────────────────
+// ── Power-up: DisparoTriple / Escudo / SlowMotion ────────────────────────────
 class PowerUp {
   constructor(x, y, type = 'triple') {
     this.x = x;
     this.y = y;
-    this.type = type;   // 'triple' | 'shield'
+    this.type = type;   // 'triple' | 'shield' | 'slow'
     this.radius = 12;
     this.ttl   = 12;   // segundos en pantalla antes de desaparecer si no se recoge
     this.pulse = 0;
@@ -280,8 +280,10 @@ class PowerUp {
     // Parpadeo en los últimos segundos, igual que la invencibilidad de la nave
     if (this.ttl < 3 && Math.floor(this.ttl * 8) % 2 === 0) return;
 
-    const color = this.type === 'shield' ? '#4ade80' : '#0ff';
-    const fill  = this.type === 'shield' ? 'rgba(74, 222, 128, 0.15)' : 'rgba(0, 255, 255, 0.15)';
+    const color = this.type === 'shield' ? '#4ade80' : this.type === 'slow' ? '#a78bfa' : '#0ff';
+    const fill  = this.type === 'shield' ? 'rgba(74, 222, 128, 0.15)'
+                : this.type === 'slow'   ? 'rgba(167, 139, 250, 0.15)'
+                : 'rgba(0, 255, 255, 0.15)';
 
     const scale = 1 + Math.sin(this.pulse * 4) * 0.12;
     ctx.save();
@@ -301,6 +303,17 @@ class PowerUp {
       // Anillo concéntrico como icono de Escudo
       ctx.beginPath();
       ctx.arc(0, 0, this.radius * 0.5, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (this.type === 'slow') {
+      // Reloj con manecillas como icono de SlowMotion
+      ctx.beginPath();
+      ctx.arc(0, 0, this.radius * 0.55, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, -this.radius * 0.4);
+      ctx.moveTo(0, 0);
+      ctx.lineTo(this.radius * 0.3, this.radius * 0.15);
       ctx.stroke();
     } else {
       // Tres pequeñas flechas en abanico como icono de DisparoTriple
@@ -331,6 +344,8 @@ let tripleTimer;    // segundos restantes de DisparoTriple activo (0 = inactivo)
 let tripleSpawned;  // si ya apareció un DisparoTriple en este nivel
 let shieldTimer;    // segundos restantes de Escudo activo (0 = inactivo)
 let shieldSpawned;  // si ya apareció un Escudo en este nivel
+let slowTimer;      // segundos restantes de SlowMotion activo (0 = inactivo)
+let slowSpawned;    // si ya apareció un SlowMotion en este nivel
 
 function spawnAsteroids(count) {
   const SAFE_DIST = 130;
@@ -358,6 +373,8 @@ function initGame() {
   tripleSpawned = false;
   shieldTimer   = 0;
   shieldSpawned = false;
+  slowTimer     = 0;
+  slowSpawned   = false;
   spawnAsteroids(4);
 }
 
@@ -368,6 +385,7 @@ function nextLevel() {
   powerUps  = [];
   tripleSpawned = false;
   shieldSpawned = false;
+  slowSpawned   = false;
   ship.reset();
   spawnAsteroids(3 + level);
 }
@@ -406,9 +424,10 @@ function update(dt) {
     return;
   }
 
-  // DisparoTriple / Escudo: cuenta atrás de los efectos activos
+  // DisparoTriple / Escudo / SlowMotion: cuenta atrás de los efectos activos
   if (tripleTimer > 0) tripleTimer = Math.max(0, tripleTimer - dt);
   if (shieldTimer > 0) shieldTimer = Math.max(0, shieldTimer - dt);
+  if (slowTimer   > 0) slowTimer   = Math.max(0, slowTimer   - dt);
 
   // Disparar
   if (pressed('Space')) {
@@ -417,7 +436,8 @@ function update(dt) {
 
   ship.update(dt);
   bullets.forEach(b => b.update(dt));
-  asteroids.forEach(a => a.update(dt));
+  const astDt = slowTimer > 0 ? dt * 0.5 : dt;
+  asteroids.forEach(a => a.update(astDt));
   particles.forEach(p => p.update(dt));
   powerUps.forEach(p => p.update(dt));
 
@@ -429,6 +449,7 @@ function update(dt) {
   const newAsteroids = [];
   const DROP_CHANCE = 0.25;
   const SHIELD_DROP_CHANCE = 0.18;
+  const SLOW_DROP_CHANCE = 0.15;
   for (const b of bullets) {
     for (const a of asteroids) {
       if (!a.dead && !b.dead && dist(b, a) < a.radius) {
@@ -443,6 +464,9 @@ function update(dt) {
         } else if (!shieldSpawned && Math.random() < SHIELD_DROP_CHANCE) {
           powerUps.push(new PowerUp(a.x, a.y, 'shield'));
           shieldSpawned = true;
+        } else if (!slowSpawned && Math.random() < SLOW_DROP_CHANCE) {
+          powerUps.push(new PowerUp(a.x, a.y, 'slow'));
+          slowSpawned = true;
         }
       }
     }
@@ -452,10 +476,12 @@ function update(dt) {
 
   // Nave vs power-up
   const SHIELD_DURATION = 5;
+  const SLOW_DURATION   = 6;
   for (const p of powerUps) {
     if (!p.dead && dist(ship, p) < ship.radius + p.radius) {
       p.dead = true;
       if (p.type === 'shield') shieldTimer = SHIELD_DURATION;
+      else if (p.type === 'slow') slowTimer = SLOW_DURATION;
       else tripleTimer = 5;
     }
   }
@@ -516,16 +542,25 @@ function drawHUD() {
   for (let i = 0; i < lives; i++)
     drawLifeIcon(W - 16 - i * 22, 18);
 
+  let effectY = 48;
   if (tripleTimer > 0) {
     ctx.textAlign = 'left';
     ctx.fillStyle = '#0ff';
-    ctx.fillText(`TRIPLE  ${Math.ceil(tripleTimer)}s`, 14, 48);
+    ctx.fillText(`TRIPLE  ${Math.ceil(tripleTimer)}s`, 14, effectY);
+    effectY += 20;
   }
 
   if (shieldTimer > 0) {
     ctx.textAlign = 'left';
     ctx.fillStyle = '#4ade80';
-    ctx.fillText(`ESCUDO  ${Math.ceil(shieldTimer)}s`, 14, tripleTimer > 0 ? 68 : 48);
+    ctx.fillText(`ESCUDO  ${Math.ceil(shieldTimer)}s`, 14, effectY);
+    effectY += 20;
+  }
+
+  if (slowTimer > 0) {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#a78bfa';
+    ctx.fillText(`LENTO  ${Math.ceil(slowTimer)}s`, 14, effectY);
   }
 }
 
